@@ -1,0 +1,9 @@
+stable-baselines3[extra]
+gym
+yfinance
+pandas
+numpy==1.26.3
+pandas_ta
+matplotlib
+scipy
+seaborn

@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#SBATCH --job-name=Rerun                # Job name
+#SBATCH --ntasks=1                      # Number of MPI tasks to request
+#SBATCH --cpus-per-task=1               # Number of CPU cores per MPI task
+#SBATCH --mem=16GB                      # Total memory to request
+#SBATCH --time=0-12:00:00               # Time limit (DD-HH:MM:SS)
+#SBATCH --account=cs-learning-2024      # Project account to use
+#SBATCH --mail-type=END,FAIL            # Mail events (NONE, BEGIN, END, FAIL, ALL)
+#SBATCH --mail-user=wh1104@york.ac.uk   # Where to send mail
+#SBATCH --output=../logs/%x-%j.log              # Standard output log
+#SBATCH --error=../logs/%x-%j.err               # Standard error log
+#SBATCH --partition=gpu                 # Which partition to use
+#SBATCH --gres=gpu:1                    # Generic resources required per node
+#SBATCH --array=1-6                     # Array range
+
+
+# Abort if any command fails
+set -e
+
+# purge any existing modules
+module purge
+
+# Commands to run
+module load Python/3.11.5-GCCcore-13.2.0
+
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+
+cd $HOME/scratch/IRP/src
+pip install -r requirements.txt
+
+sleep $((RANDOM%30))
+
+python controller.py 10

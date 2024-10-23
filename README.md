@@ -59,8 +59,8 @@ This project explores the application of Continual Learning (CL) techniques to R
 1. **Clone the Repository**:
 
    ```bash
-   git clone https://github.com/Anthony-Ho/IRP.git
-   cd IRP
+   git clone https://github.com/Anthony-Ho/IRP-Submission.git
+   cd IRP-Submission
    ```
 
 2. **Build the Docker Image**: Navigate to the docker directory and build the Docker image:
@@ -137,8 +137,8 @@ Follow the steps below to set up and run the experiment on the Viking HPC cluste
    - **Option 2**: Clone the submission repository:
 
     ```bash
-    git clone https://github.com/Anthony-Ho/IRP.git
-    cd IRP/src
+    git clone https://github.com/Anthony-Ho/IRP-Submission.git
+    cd IRP-Submission/src
     ```
 
 2. Edit the Job Script

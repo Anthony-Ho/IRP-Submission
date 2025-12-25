@@ -25,6 +25,6 @@ tic_list = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'BRK-B', 'JNJ', 'V',
 TRANSACTION_FEE_RATE = 0.001
 INITIAL_BALANCE = 100000
 
-data_dir = '../data'
-model_dir = '../models'
-result_dir = '../results'
+data_dir = 'data'
+model_dir = 'models'
+result_dir = 'results'

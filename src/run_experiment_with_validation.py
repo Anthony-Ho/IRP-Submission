@@ -9,14 +9,14 @@ sys.path.append('/workspace/IRP/src')
 
 # Import local functions
 from experiment_config import tic_list, result_dir, model_dir, PPO_PARAMS, A2C_PARAMS, DDPG_PARAMS
-from training import train_baseline_agents, train_naive_strategy, train_ewc_agents, train_replay_agents
+from training import train_baseline_agents, train_naive_strategy, train_ewc_agents, train_replay_agents, train_cumulative_strategy
 from data_processing import split_collect_stock_data_from_csv
 from experiment_utils import update_combination_status
 from envs import PortfolioAllocationEnv, PortfolioAllocationEnvLogReturn
 from performance import test_agent_performance, calculate_performance_metrics
 
 # Main Experiment Loop with incremental CSV writing
-def experiment_iteration(model_dir, train_df1, train_df2, val_df1, val_df2, test_df1, test_df2, group1, group2, iteration, 
+def experiment_iteration(model_dir, train_df1, train_df2, train_df_combined, val_df1, val_df2, val_df_combined, test_df1, test_df2, group1, group2, iteration,
                          PPO_PARAMS, A2C_PARAMS, DDPG_PARAMS, results_file, returns_file,
                          validation_interval=10, patience=3, total_timesteps=[100000, 80000, 50000], 
                          env_class=PortfolioAllocationEnv):
@@ -71,7 +71,15 @@ def experiment_iteration(model_dir, train_df1, train_df2, val_df1, val_df2, test
         model_dir, train_df1, train_df2, group1, group2, iteration, PPO_PARAMS, A2C_PARAMS, DDPG_PARAMS,
         validation_df=val_df2, validation_interval=validation_interval, patience=patience, 
         total_timesteps=total_timesteps, env_class=env_class
-    ) 
+    )
+
+    # Step 5: Cumulative (Joint) Strategy Training
+    print(f"Iteration {iteration}: Training Cumulative Strategy Agents")
+    ppo_cumulative, a2c_cumulative, ddpg_cumulative = train_cumulative_strategy(
+        model_dir, train_df_combined, group1 + group2, iteration, PPO_PARAMS, A2C_PARAMS, DDPG_PARAMS,
+        validation_df=val_df_combined, validation_interval=validation_interval, patience=patience,
+        total_timesteps=total_timesteps, env_class=env_class
+    )
    
     # Performance Testing
     print(f"Iteration {iteration}: Testing Performance of Trained Agents")
@@ -83,7 +91,8 @@ def experiment_iteration(model_dir, train_df1, train_df2, val_df1, val_df2, test
         ("baseline", ppo_baseline, a2c_baseline, ddpg_baseline),
         ("naive", ppo_naive, a2c_naive, ddpg_naive),
         ("ewc", ppo_ewc, a2c_ewc, ddpg_ewc),
-        ("replay", ppo_replay, a2c_replay, ddpg_replay)
+        ("replay", ppo_replay, a2c_replay, ddpg_replay),
+        ("cumulative", ppo_cumulative, a2c_cumulative, ddpg_cumulative)
     ]:
         env_group1 = PortfolioAllocationEnv(test_df1, initial_balance=100000, tic_list=group1, transaction_fee_rate=0.001)
         env_group2 = PortfolioAllocationEnv(test_df2, initial_balance=100000, tic_list=group1, transaction_fee_rate=0.001)
@@ -153,13 +162,13 @@ def experiment_iteration(model_dir, train_df1, train_df2, val_df1, val_df2, test
     else:
         returns_df.to_csv(returns_file, index=False, mode='a', header=False)  # Append without writing header
 
-def run_experiment_with_validation(combination_file='combinartions.csv'):
+def run_experiment_with_validation(combination_file='combinartions.csv', total_timesteps=[50000, 80000, 50000]):
     """
     This is the main loop to run the experiment once.
     12 models (Baslein, Naive, EWC and Reply on PPO, A2C and DDPF) are trained
     24 tests (on Group 1 and Group 2 test data for 12 models) are done.
     """
-    iteration, group1, group2, df1, df2 = split_collect_stock_data_from_csv(tic_list=tic_list, combination_file=combination_file)
+    iteration, group1, group2, df1, df2, df_combined = split_collect_stock_data_from_csv(tic_list=tic_list, combination_file=combination_file)
 
     results_file = os.path.join(result_dir, f'results-viking-{iteration}.csv')
     returns_file = os.path.join(result_dir, f'returns-viking-{iteration}.csv')
@@ -173,10 +182,14 @@ def run_experiment_with_validation(combination_file='combinartions.csv'):
     validation_df2 = df2.loc[(df2.index.get_level_values(0) >= '2020-01-01') & (df2.index.get_level_values(0) <= '2021-12-31')]
     trade_df2 = df2.loc[(df2.index.get_level_values(0) >= '2022-01-01') & (df2.index.get_level_values(0) <= '2023-12-31')]
 
+    train_df_combined = df_combined.loc[(df_combined.index.get_level_values(0) >= '2010-01-01') & (df_combined.index.get_level_values(0) <= '2019-12-31')]
+    validation_df_combined = df_combined.loc[(df_combined.index.get_level_values(0) >= '2020-01-01') & (df_combined.index.get_level_values(0) <= '2021-12-31')]
+
     experiment_iteration(
-        model_dir, train_df1, train_df2, trade_df1, validation_df1, validation_df2, trade_df2, group1, group2, 
-        iteration, PPO_PARAMS, A2C_PARAMS, DDPG_PARAMS, results_file, returns_file,
-        validation_interval=20, patience=3, total_timesteps=[50000, 80000, 50000], 
+        model_dir, train_df1, train_df2, train_df_combined, val_df1=validation_df1, val_df2=validation_df2, val_df_combined=validation_df_combined,
+        test_df1=trade_df1, test_df2=trade_df2, group1=group1, group2=group2,
+        iteration=iteration, PPO_PARAMS=PPO_PARAMS, A2C_PARAMS=A2C_PARAMS, DDPG_PARAMS=DDPG_PARAMS, results_file=results_file, returns_file=returns_file,
+        validation_interval=20, patience=3, total_timesteps=total_timesteps,
         env_class=PortfolioAllocationEnvLogReturn
     )
 
@@ -187,6 +200,7 @@ def run_experiment_with_validation(combination_file='combinartions.csv'):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the experiment with optional parameters.")
     parser.add_argument('--combination_file', type=str, default='combinations.csv', help="Path to the combination file.")
+    parser.add_argument('--total_timesteps', nargs='+', type=int, default=[50000, 80000, 50000], help="List of total timesteps for PPO, A2C, DDPG.")
     args = parser.parse_args()
 
-    run_experiment_with_validation(combination_file=args.combination_file)
+    run_experiment_with_validation(combination_file=args.combination_file, total_timesteps=args.total_timesteps)

@@ -78,7 +78,12 @@ def get_next_combination(tic_list, csv_file='combinations.csv', container_id=Non
 
     
     # Load the CSV file
-    df = pd.read_csv(os.path.join(data_dir, csv_file))
+    try:
+        df = pd.read_csv(os.path.join(data_dir, csv_file))
+        if 'group1' not in df.columns: # fallback for semicolon separator if needed
+            df = pd.read_csv(os.path.join(data_dir, csv_file), sep=';')
+    except:
+        df = pd.read_csv(os.path.join(data_dir, csv_file))
 
     # Loop through the CSV to find the first untrained combination
     for index, untrained_row in df[df['status'] == 'untrained'].iterrows():

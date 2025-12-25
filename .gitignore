@@ -170,3 +170,6 @@ archives/*
 logs/*
 results/return*
 .DS_Store
+data/
+data/
+data/

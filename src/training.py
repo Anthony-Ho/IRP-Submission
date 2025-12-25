@@ -173,6 +173,69 @@ def train_naive_strategy(model_dir, train_df2, group2, iteration, PPO_PARAMS, A2
     return naive_ppo, naive_a2c, naive_ddpg
 
 
+def train_cumulative_strategy(model_dir, train_df_combined, group_combined, iteration, PPO_PARAMS, A2C_PARAMS, DDPG_PARAMS,
+                         transaction_fee_rate=0.001, initial_balance=100000, validation_df=None,
+                         validation_interval=10, patience=3, total_timesteps=[50000, 80000, 50000],
+                         env_class=PortfolioAllocationEnv):
+    """
+    Train PPO, A2C, and DDPG agents using the cumulative (joint) training strategy.
+
+    Parameters:
+    - model_dir: The directory where the pretrained models are saved.
+    - train_df_combined: DataFrame containing combined group1 and group2 data for training.
+    - group_combined: List of all tickers (group1 + group2).
+    - iteration: The iteration number (int) for naming the model files.
+    - PPO_PARAMS, A2C_PARAMS, DDPG_PARAMS: Hyperparameters.
+    - transaction_fee_rate: Transaction fee rate.
+    - initial_balance: Initial balance.
+    - validation_df: DataFrame for validation.
+    - validation_interval, patience: Early stopping parameters.
+    - total_timesteps: List of timesteps.
+    - env_class: Environment class.
+
+    Returns:
+    - cumulative_ppo, cumulative_a2c, cumulative_ddpg: Trained models.
+    """
+
+    # Create a unique group name based on the iteration number
+    baseline_name = f"baseline_{iteration}"
+    group_name = f"cumulative_{iteration}"
+
+    # Create the training environment for combined group using the specified environment class
+    combined_env = env_class(df=train_df_combined, initial_balance=initial_balance, tic_list=group_combined, transaction_fee_rate=transaction_fee_rate)
+
+    # If validation_df is provided, create the validation environment
+    val_env = None
+    if validation_df is not None:
+        val_env = env_class(df=validation_df, initial_balance=initial_balance, tic_list=group_combined, transaction_fee_rate=transaction_fee_rate)
+
+    # Train PPO agent
+    cumulative_ppo = PPO.load(os.path.join(model_dir, f"ppo_{baseline_name}"), env=combined_env)
+    if val_env is not None:
+        cumulative_ppo = train_with_early_stopping(cumulative_ppo, combined_env, val_env, total_timesteps[0], validation_interval, patience, model_dir)
+    else:
+        cumulative_ppo.learn(total_timesteps=total_timesteps[0])
+    cumulative_ppo.save(os.path.join(model_dir, f"ppo_{group_name}"))
+
+    # Train A2C agent
+    cumulative_a2c = A2C.load(os.path.join(model_dir, f"a2c_{baseline_name}"), env=combined_env)
+    if val_env is not None:
+        cumulative_a2c = train_with_early_stopping(cumulative_a2c, combined_env, val_env, total_timesteps[1], validation_interval, patience, model_dir)
+    else:
+        cumulative_a2c.learn(total_timesteps=total_timesteps[1])
+    cumulative_a2c.save(os.path.join(model_dir, f"a2c_{group_name}"))
+
+    # Train DDPG agent
+    cumulative_ddpg = DDPG.load(os.path.join(model_dir, f"ddpg_{baseline_name}"), env=combined_env)
+    if val_env is not None:
+        cumulative_ddpg = train_with_early_stopping(cumulative_ddpg, combined_env, val_env, total_timesteps[2], validation_interval, patience, model_dir)
+    else:
+        cumulative_ddpg.learn(total_timesteps=total_timesteps[2])
+    cumulative_ddpg.save(os.path.join(model_dir, f"ddpg_{group_name}"))
+
+    return cumulative_ppo, cumulative_a2c, cumulative_ddpg
+
+
 def train_ewc_agents(model_dir, train_df1, train_df2, group1, group2, iteration, PPO_PARAMS, A2C_PARAMS, DDPG_PARAMS, 
                      transaction_fee_rate=0.001, initial_balance=100000, validation_df=None, 
                      validation_interval=10, patience=3, total_timesteps=[50000, 80000, 50000], 

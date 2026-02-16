@@ -86,7 +86,7 @@ def experiment_iteration(model_dir, train_df1, train_df2, val_df1, val_df2, test
         ("replay", ppo_replay, a2c_replay, ddpg_replay)
     ]:
         env_group1 = PortfolioAllocationEnv(test_df1, initial_balance=100000, tic_list=group1, transaction_fee_rate=0.001)
-        env_group2 = PortfolioAllocationEnv(test_df2, initial_balance=100000, tic_list=group1, transaction_fee_rate=0.001)
+        env_group2 = PortfolioAllocationEnv(test_df2, initial_balance=100000, tic_list=group2, transaction_fee_rate=0.001)
 
         for rl_model, agent in [
             ("PPO", ppo_agent),
@@ -174,7 +174,7 @@ def run_experiment_with_validation(combination_file='combinartions.csv'):
     trade_df2 = df2.loc[(df2.index.get_level_values(0) >= '2022-01-01') & (df2.index.get_level_values(0) <= '2023-12-31')]
 
     experiment_iteration(
-        model_dir, train_df1, train_df2, trade_df1, validation_df1, validation_df2, trade_df2, group1, group2, 
+        model_dir, train_df1, train_df2, validation_df1, validation_df2, trade_df1, trade_df2, group1, group2, 
         iteration, PPO_PARAMS, A2C_PARAMS, DDPG_PARAMS, results_file, returns_file,
         validation_interval=20, patience=3, total_timesteps=[50000, 80000, 50000], 
         env_class=PortfolioAllocationEnvLogReturn

@@ -12,7 +12,9 @@ import os
 from gymnasium import spaces
 
 # Local Import
+from deterministic_ewc_regularizer import Deterministic_EWC
 from envs import PortfolioAllocationEnv
+from ewc_regularizer import EWC
 from performance import validate_agent_performance
 
 def create_dataloader(agent, env, desired_num_observations=10000, batch_size=64, use_agent_policy=True):
@@ -67,53 +69,6 @@ def create_dataloader(agent, env, desired_num_observations=10000, batch_size=64,
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
     return dataloader
-
-class EWC:
-    def __init__(self, agent, dataloader, lambda_=0.4):
-        self.agent = agent
-        self.lambda_ = lambda_
-        self.params = {n: p.clone().detach() for n, p in agent.policy.named_parameters() if p.requires_grad}
-        self.fisher_matrix = self.calculate_fisher_information(dataloader)
-    
-    def calculate_fisher_information(self, dataloader):
-        fisher_matrix = {}
-        for n, p in self.params.items():
-            fisher_matrix[n] = torch.zeros_like(p)
-
-        for data in dataloader:
-            obs = data[0]  # Corrected indexing
-            # Ensure observations are on the correct device
-            obs = obs.to(self.agent.device)
-            
-            # Move obs to CPU and convert to NumPy array
-            obs_numpy = obs.cpu().numpy()
-    
-            action, _ = self.agent.policy.predict(obs_numpy, deterministic=True)
-            action_tensor = torch.tensor(action).to(self.agent.device)
-            
-            # Forward pass through the policy network
-            log_prob = self.agent.policy.evaluate_actions(obs, action_tensor)[1]
-            loss = -log_prob.mean()  # Maximize log probability
-            self.agent.policy.optimizer.zero_grad()
-            loss.backward()
-
-            # Accumulate Fisher Information
-            for n, p in self.agent.policy.named_parameters():
-                if p.grad is not None:
-                    fisher_matrix[n] += p.grad ** 2
-
-        # Normalize Fisher Information
-        for n in fisher_matrix:
-            fisher_matrix[n] /= len(dataloader)
-        return fisher_matrix
-
-    def penalty(self):
-        penalty_loss = 0
-        for n, p in self.agent.policy.named_parameters():
-            if p.requires_grad:
-                penalty_loss += (self.fisher_matrix[n] * (p - self.params[n]) ** 2).sum()
-        return (self.lambda_ / 2) * penalty_loss
-
 
 class EWC_PPO(PPO):
     def __init__(self, *args, ewc=None, **kwargs):
@@ -206,7 +161,7 @@ class EWC_PPO(PPO):
 
                 # Add EWC penalty
                 if self.ewc is not None:
-                    ewc_penalty = self.ewc.penalty()
+                    ewc_penalty = self.ewc.penalty(self.policy)
                     loss += ewc_penalty
 
                 # Calculate approximate form of reverse KL Divergence for early stopping
@@ -314,7 +269,7 @@ class EWC_A2C(A2C):
 
             # Add EWC penalty
             if self.ewc is not None:
-                ewc_penalty = self.ewc.penalty()
+                ewc_penalty = self.ewc.penalty(self.policy)
                 loss += ewc_penalty
                 ewc_penalties.append(ewc_penalty.item())
 
@@ -338,51 +293,6 @@ class EWC_A2C(A2C):
             self.logger.record("train/std", torch.exp(self.policy.log_std).mean().item())
         if self.ewc is not None:
             self.logger.record("train/ewc_penalty", np.mean(ewc_penalties))
-
-
-class Deterministic_EWC:
-    def __init__(self, agent, dataloader, lambda_=0.4):
-        self.agent = agent  # The pre-trained agent
-        self.lambda_ = lambda_
-        # Store the parameters of the actor network
-        self.params = {n: p.clone().detach() for n, p in agent.actor.named_parameters() if p.requires_grad}
-        self.fisher_matrix = self.calculate_fisher_information(dataloader)
-
-    def calculate_fisher_information(self, dataloader):
-        fisher_matrix = {}
-        for n, p in self.params.items():
-            fisher_matrix[n] = torch.zeros_like(p)
-
-        for data in dataloader:
-            obs = data[0].to(self.agent.device)
-            # Get actions from the pre-trained actor
-            actions = self.agent.actor(obs)
-            # Do not detach actions
-            # Optionally add small noise to simulate stochasticity
-            noise = torch.normal(0, 1e-6, size=actions.shape).to(actions.device)
-            actions_noisy = actions + noise
-            # Compute approximate log probabilities
-            log_probs = -0.5 * ((actions_noisy) ** 2).sum(dim=1)
-            loss = -log_probs.mean()
-            self.agent.actor.zero_grad()
-            loss.backward()
-
-            # Accumulate Fisher Information
-            for n, p in self.agent.actor.named_parameters():
-                if p.grad is not None:
-                    fisher_matrix[n] += p.grad.data.clone() ** 2
-
-        # Normalize Fisher Information
-        for n in fisher_matrix:
-            fisher_matrix[n] /= len(dataloader)
-        return fisher_matrix
-
-    def penalty(self, network):
-        penalty_loss = 0
-        for n, p in network.named_parameters():
-            if p.requires_grad:
-                penalty_loss += (self.fisher_matrix[n] * (p - self.params[n]) ** 2).sum()
-        return (self.lambda_ / 2) * penalty_loss
 
 
 class EWC_DDPG(DDPG):

@@ -236,7 +236,8 @@ def train_ewc_agents(model_dir, train_df1, train_df2, group1, group2, iteration,
         policy=ppo_model_group1.policy.__class__,
         env=group2_env,
         ewc=ewc_ppo,
-        verbose=1
+        verbose=1,
+        **PPO_PARAMS
     )
 
     # Load pre-trained policy weights and train the EWC agent
@@ -265,7 +266,8 @@ def train_ewc_agents(model_dir, train_df1, train_df2, group1, group2, iteration,
         policy=a2c_model_group1.policy.__class__,
         env=group2_env,
         ewc=ewc_a2c,
-        verbose=1
+        verbose=1,
+        **A2C_PARAMS
     )
 
     # Load pre-trained policy weights and train the EWC agent
@@ -295,6 +297,7 @@ def train_ewc_agents(model_dir, train_df1, train_df2, group1, group2, iteration,
         env=group2_env,
         ewc=ewc_ddpg,
         verbose=1,
+        **DDPG_PARAMS
     )
 
     ewc_ddpg_agent.actor.load_state_dict(ddpg_model_group1.actor.state_dict())

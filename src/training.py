@@ -6,6 +6,17 @@ from envs import PortfolioAllocationEnv, PortfolioAllocationEnvLogReturn
 from continual_learning import *
 from performance import validate_agent_performance
 
+TRAIN_ENV_KWARGS = {
+    "random_start": True,
+    "random_window_size": True,
+    "min_window_size": 200,
+}
+
+EVAL_ENV_KWARGS = {
+    "random_start": False,
+    "random_window_size": False,
+}
+
 def train_with_early_stopping(agent, train_env, val_env, total_timesteps, validation_interval, patience, model_dir):
     """
     Train the agent with early stopping based on validation performance.
@@ -70,12 +81,24 @@ def train_baseline_agents(model_dir, train_df1, group1, iteration, PPO_PARAMS, A
     group_name = f"baseline_{iteration}"
     
     # Create the training environment for group1 data
-    train_env = env_class(df=train_df1, initial_balance=initial_balance, tic_list=group1, transaction_fee_rate=transaction_fee_rate)
+    train_env = env_class(
+        df=train_df1,
+        initial_balance=initial_balance,
+        tic_list=group1,
+        transaction_fee_rate=transaction_fee_rate,
+        **TRAIN_ENV_KWARGS,
+    )
 
     # If validation_df is provided, create the validation environment
     val_env = None
     if validation_df is not None:
-        val_env = env_class(df=validation_df, initial_balance=initial_balance, tic_list=group1, transaction_fee_rate=transaction_fee_rate)
+        val_env = env_class(
+            df=validation_df,
+            initial_balance=initial_balance,
+            tic_list=group1,
+            transaction_fee_rate=transaction_fee_rate,
+            **EVAL_ENV_KWARGS,
+        )
 
     # Train PPO agent
     ppo_model = PPO("MlpPolicy", train_env, verbose=1, **PPO_PARAMS)
@@ -138,12 +161,24 @@ def train_naive_strategy(model_dir, train_df2, group2, iteration, PPO_PARAMS, A2
     group_name = f"naive_{iteration}"
 
     # Create the training environment for group2 using the specified environment class
-    group2_env = env_class(df=train_df2, initial_balance=initial_balance, tic_list=group2, transaction_fee_rate=transaction_fee_rate)
+    group2_env = env_class(
+        df=train_df2,
+        initial_balance=initial_balance,
+        tic_list=group2,
+        transaction_fee_rate=transaction_fee_rate,
+        **TRAIN_ENV_KWARGS,
+    )
 
     # If validation_df is provided, create the validation environment using the same class
     val_env = None
     if validation_df is not None:
-        val_env = env_class(df=validation_df, initial_balance=initial_balance, tic_list=group2, transaction_fee_rate=transaction_fee_rate)
+        val_env = env_class(
+            df=validation_df,
+            initial_balance=initial_balance,
+            tic_list=group2,
+            transaction_fee_rate=transaction_fee_rate,
+            **EVAL_ENV_KWARGS,
+        )
 
     # Train PPO agent using naive strategy
     naive_ppo = PPO.load(os.path.join(model_dir, f"ppo_{baseline_name}"), env=group2_env)
@@ -210,13 +245,31 @@ def train_ewc_agents(model_dir, train_df1, train_df2, group1, group2, iteration,
     group_name = f"ewc_{iteration}"
 
     # Create the training environments for group1 and group2 using the specified environment class
-    group1_env = env_class(df=train_df1, initial_balance=initial_balance, tic_list=group1, transaction_fee_rate=transaction_fee_rate)
-    group2_env = env_class(df=train_df2, initial_balance=initial_balance, tic_list=group2, transaction_fee_rate=transaction_fee_rate)
+    group1_env = env_class(
+        df=train_df1,
+        initial_balance=initial_balance,
+        tic_list=group1,
+        transaction_fee_rate=transaction_fee_rate,
+        **TRAIN_ENV_KWARGS,
+    )
+    group2_env = env_class(
+        df=train_df2,
+        initial_balance=initial_balance,
+        tic_list=group2,
+        transaction_fee_rate=transaction_fee_rate,
+        **TRAIN_ENV_KWARGS,
+    )
 
     # If validation_df is provided, create the validation environment
     val_env = None
     if validation_df is not None:
-        val_env = env_class(df=validation_df, initial_balance=initial_balance, tic_list=group2, transaction_fee_rate=transaction_fee_rate)
+        val_env = env_class(
+            df=validation_df,
+            initial_balance=initial_balance,
+            tic_list=group2,
+            transaction_fee_rate=transaction_fee_rate,
+            **EVAL_ENV_KWARGS,
+        )
 
     ## PPO Agent with EWC ##
     ppo_model_group1 = PPO.load(os.path.join(model_dir, f"ppo_{baseline_name}"))

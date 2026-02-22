@@ -17,6 +17,17 @@ from envs import PortfolioAllocationEnv
 from ewc_regularizer import EWC
 from performance import validate_agent_performance
 
+TRAIN_ENV_KWARGS = {
+    "random_start": True,
+    "random_window_size": True,
+    "min_window_size": 200,
+}
+
+EVAL_ENV_KWARGS = {
+    "random_start": False,
+    "random_window_size": False,
+}
+
 def create_dataloader(agent, env, desired_num_observations=10000, batch_size=64, use_agent_policy=True):
     """
     Creates a DataLoader from observations collected using the agent in the given environment.
@@ -399,7 +410,9 @@ def create_group1_env_random(group1_df, tic_list, num_days=252, transaction_fee_
         df=group1_subset, 
         initial_balance=initial_balance, 
         tic_list=tic_list, 
-        transaction_fee_rate=transaction_fee_rate
+        transaction_fee_rate=transaction_fee_rate,
+        max_window_size=num_days,
+        **TRAIN_ENV_KWARGS,
     )
     
     # Wrap the environment if necessary (e.g., with DummyVecEnv for compatibility)
@@ -414,7 +427,8 @@ def create_group2_env(train_df2, tic_list, transaction_fee_rate=0.001, initial_b
         df=train_df2, 
         initial_balance=initial_balance, 
         tic_list=tic_list, 
-        transaction_fee_rate=transaction_fee_rate
+        transaction_fee_rate=transaction_fee_rate,
+        **TRAIN_ENV_KWARGS,
     )
     
     # Wrap the environment if necessary
@@ -465,7 +479,13 @@ def perform_replay_training(train_df1, train_df2, tic_list_group1, tic_list_grou
     # f validation_df is provided, create the validation environment
     val_env = None
     if validation_df is not None:
-        val_env = env_class(df=validation_df, initial_balance=initial_balance, tic_list=tic_list_group2, transaction_fee_rate=transaction_fee_rate)
+        val_env = env_class(
+            df=validation_df,
+            initial_balance=initial_balance,
+            tic_list=tic_list_group2,
+            transaction_fee_rate=transaction_fee_rate,
+            **EVAL_ENV_KWARGS,
+        )
 
     # Initialize the agent with group2 environment
     group1_model_path = os.path.join(model_dir, agent_filename)
@@ -535,7 +555,7 @@ def perform_replay_training(train_df1, train_df2, tic_list_group1, tic_list_grou
                 random_group1_env = create_group1_env_random(
                     train_df1, 
                     tic_list_group1,
-                    num_days=int(reinforcement_steps/10), 
+                    num_days=max(200, int(reinforcement_steps / 10)),
                     transaction_fee_rate=transaction_fee_rate, 
                     initial_balance=initial_balance,
                     env_class=env_class

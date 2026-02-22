@@ -8,7 +8,19 @@ class PortfolioAllocationEnv(gym.Env):
     Custom Environment that follows gym interface.
     This is a stock portfolio allocation environment.
     """
-    def __init__(self, df, initial_balance=10000, tic_list=None, transaction_fee_rate=0.001, logfile=None):
+    def __init__(
+        self,
+        df,
+        initial_balance=10000,
+        tic_list=None,
+        transaction_fee_rate=0.001,
+        logfile=None,
+        random_start=False,
+        random_window_size=False,
+        min_window_size=200,
+        max_window_size=None,
+        window_size=None,
+    ):
         """
         Initializes the environment.
         df = the stock trading information and features for training the agents.
@@ -37,6 +49,15 @@ class PortfolioAllocationEnv(gym.Env):
         # self.prices = current_data['Close'].values
         self.portfolio_value = self.balance
         self.trading_dates = self.df.index.get_level_values(0).unique()
+        self.episode_start_step = 0
+        self.episode_end_step = len(self.trading_dates) - 1
+
+        # Episode window controls
+        self.random_start = random_start
+        self.random_window_size = random_window_size
+        self.min_window_size = min_window_size
+        self.max_window_size = max_window_size
+        self.window_size = window_size
 
         # Transaction fee rate
         self.transaction_fee_rate = transaction_fee_rate
@@ -81,10 +102,35 @@ class PortfolioAllocationEnv(gym.Env):
             log_df.set_index('Dates', inplace=True)
             print((log_df.head()))
 
+        total_days = len(self.trading_dates)
+        if total_days < 2:
+            raise ValueError("At least 2 trading days are required for t+1 execution.")
+        if (self.random_window_size or self.window_size is not None) and total_days < self.min_window_size:
+            raise ValueError(
+                f"Insufficient trading days ({total_days}) for minimum window size {self.min_window_size}."
+            )
+
+        # Resolve episode window size (number of dates included in the episode).
+        effective_max_window = total_days if self.max_window_size is None else min(self.max_window_size, total_days)
+        effective_min_window = min(max(2, self.min_window_size), effective_max_window)
+
+        if self.random_window_size:
+            selected_window = np.random.randint(effective_min_window, effective_max_window + 1)
+        elif self.window_size is not None:
+            selected_window = int(np.clip(self.window_size, effective_min_window, effective_max_window))
+        else:
+            selected_window = total_days
+
+        max_start_step = total_days - selected_window
+        if self.random_start and max_start_step > 0:
+            self.episode_start_step = np.random.randint(0, max_start_step + 1)
+        else:
+            self.episode_start_step = 0
+        self.episode_end_step = self.episode_start_step + selected_window - 1
 
         # reset environment state
         self.balance = self.initial_balance
-        self.current_step = 0
+        self.current_step = self.episode_start_step
         self.done = False
         self.portfolio_weights = np.array([1] + [0] * self.n_stocks, dtype=float)
         self.holdings = np.zeros(self.n_stocks, dtype=float)
@@ -112,19 +158,30 @@ class PortfolioAllocationEnv(gym.Env):
         - done: Whether the episode is over.
         - info: Additional information (empty in this case).
         """
-        # Execute the action (rebalance the portfolio)
-        current_prices = self._get_close_prices(self.current_step)
-        self._take_action(action, current_prices)
+        # Decide at day t, execute once at day t+1 open, then mark-to-market
+        # at day t+1 close.
+        previous_portfolio_value = self.portfolio_value
 
-        # Advance to the next step
-        self.current_step += 1
+        if self.current_step >= self.episode_end_step:
+            observation = self._get_observation()
+            return observation, 0.0, True, False, {}
 
-        # Update the portfolio value and weights after the action
-        next_prices = self._get_close_prices(self.current_step)
-        self._update_portfolio_value(next_prices)
+        execution_step = self.current_step + 1
+        execution_open_prices = self._get_open_prices(execution_step)
 
-        # Calculate reward based on the change in portfolio value
-        reward = self._calculate_reward()
+        # First, apply overnight move to value holdings at the execution open.
+        self._update_portfolio_value(execution_open_prices)
+
+        # Then rebalance at that open using the up-to-date portfolio value.
+        self._take_action(action, execution_open_prices)
+
+        # Move to execution day and value the portfolio at that day's close.
+        self.current_step = execution_step
+        close_prices = self._get_close_prices(self.current_step)
+        self._update_portfolio_value(close_prices)
+
+        # Calculate reward based on the updated portfolio value
+        reward = self._calculate_reward(previous_portfolio_value=previous_portfolio_value)
 
         # Store the action in memory
         self._action_memory.append(action)
@@ -137,7 +194,7 @@ class PortfolioAllocationEnv(gym.Env):
         self._final_weights_memory.append(self.portfolio_weights.copy())
 
         # Check if we're
-        terminated = self.current_step >= len(self.trading_dates) - 1
+        terminated = self.current_step >= self.episode_end_step
         truncated = False  # This could be set to True if truncate the episode would be used
 
         # Get the new observation
@@ -172,6 +229,20 @@ class PortfolioAllocationEnv(gym.Env):
         exp_action = np.exp(action - np.max(action))  # Subtract max to avoid overflow
         return exp_action / np.sum(exp_action)
 
+    def _get_open_prices(self, step):
+        """
+        Get the 'Open' prices of all tickers at the specified step (date).
+        """
+        # Get the current date corresponding to the step
+        current_date = self.df.index.get_level_values(0).unique()[step]
+
+        # Filter the DataFrame for this date (all tickers)
+        current_data = self.df.loc[current_date]
+
+        # Extract the 'Open' prices for all tickers on the current date
+        open_prices = current_data['Open']
+
+        return open_prices
 
     def _get_close_prices(self, step):
         """
@@ -259,12 +330,15 @@ class PortfolioAllocationEnv(gym.Env):
         self.portfolio_weights[0] = self.balance / self.portfolio_value  # Cash weight
 
 
-    def _calculate_reward(self):
+    def _calculate_reward(self, previous_portfolio_value=None):
         """
         Calculate the reward based on the change in portfolio value.
         """
-        #reward = self.portfolio_value / self.initial_balance -1
-        reward = self.portfolio_value
+        # Use one-step simple return to keep reward scale independent of episode length.
+        if previous_portfolio_value is None or previous_portfolio_value <= 0:
+            return 0.0
+
+        reward = (self.portfolio_value / previous_portfolio_value) - 1.0
 
         return reward
 
@@ -363,8 +437,10 @@ class PortfolioAllocationEnv(gym.Env):
         Save the details of the episode, including actions, portfolio values, and other metrics.
         """
 
-        steps = range((len(self._action_memory)))
-        dates = self.trading_dates[steps]
+        # Actions at decision date t are executed/valued at date t+1.
+        start = self.episode_start_step + 1
+        end = start + len(self._action_memory)
+        dates = self.trading_dates[start:end]
 
         episode_log = {
             'Episode': [self.episode] * len(self._action_memory),
@@ -389,19 +465,14 @@ class PortfolioAllocationEnvLogReturn(PortfolioAllocationEnv):
     Inherits from PortfolioAllocationEnv and overrides _calculate_reward()
     to return the daily log return of the portfolio.
     """
-    def _calculate_reward(self):
+    def _calculate_reward(self, previous_portfolio_value=None):
         """
         Calculate the daily log return based on the portfolio value.
         """
-        # Ensure that there is a previous portfolio value to compare
-        if len(self._portfolio_value_memory) < 2:
-            return 0  # No log return for the first step
-        
-        # Portfolio value at the current and previous step
-        current_value = self.portfolio_value
-        previous_value = self._portfolio_value_memory[-2]
+        if previous_portfolio_value is None or previous_portfolio_value <= 0:
+            return 0
 
         # Calculate log return
-        log_return = np.log(current_value / previous_value)
+        log_return = np.log(self.portfolio_value / previous_portfolio_value)
 
         return log_return

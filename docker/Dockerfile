@@ -18,7 +18,7 @@ RUN pip install --upgrade pip
 COPY src/requirements.txt .
 
 # Install Python packages required by your application
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir --prefer-binary -r requirements.txt
 
 # Copy the entire source directory into the container
 COPY src/ /workspace/IRP/src

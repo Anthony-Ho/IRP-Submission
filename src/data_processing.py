@@ -1,6 +1,6 @@
 import yfinance as yf
 import pandas as pd
-import pandas_ta  as ta # Technical Analysis library
+import talib
 import numpy as np
 import random
 import os
@@ -8,6 +8,32 @@ import os
 #Local Import
 from experiment_config import data_dir
 from experiment_utils import get_next_combination
+
+def _calculate_vortex(high, low, close, length=14):
+    """
+    Compute Vortex Indicator (VI+ and VI-) using a pandas_ta-compatible formula.
+    """
+    prev_high = high.shift(1)
+    prev_low = low.shift(1)
+    prev_close = close.shift(1)
+
+    vm_plus = (high - prev_low).abs()
+    vm_minus = (low - prev_high).abs()
+    tr = pd.concat(
+        [
+            (high - low).abs(),
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+
+    tr_sum = tr.rolling(length, min_periods=length).sum()
+    vi_plus = vm_plus.rolling(length, min_periods=length).sum() / tr_sum
+    vi_minus = vm_minus.rolling(length, min_periods=length).sum() / tr_sum
+
+    return vi_plus, vi_minus
+
 
 def get_data_from_yahoo(tic_list, start_date='2009-01-01', end_date='2024-01-01'):
     """
@@ -46,28 +72,77 @@ def add_technical_indicators(df):
     Returns:
     - pd.DataFrame: DataFrame with technical indicators and covariance matrix added.
     """
-    # Sort by 'tic' and 'date' just to ensure proper ordering
-    df = df.sort_values(by=['tic', 'Date'])
+    # Work in flat form for robust per-ticker assignment, then restore index='tic'
+    df = df.reset_index()
+    df = df.sort_values(by=['tic', 'Date']).copy()
 
-    # Add technical indicators
-    df['SMA_10'] = df.groupby('tic')['Close'].transform(lambda x: ta.sma(x, length=10))
-    df['SMA_50'] = df.groupby('tic')['Close'].transform(lambda x: ta.sma(x, length=50))
-    df['SMA_200'] = df.groupby('tic')['Close'].transform(lambda x: ta.sma(x, length=200))
-    df['EMA_10'] = df.groupby('tic')['Close'].transform(lambda x: ta.ema(x, length=10))
-    df['RSI_14'] = df.groupby('tic')['Close'].transform(lambda x: ta.rsi(x, length=14))
-    df['MACD'], df['MACD_signal'], df['MACD_hist'] = df.groupby('tic')['Close'].apply(lambda x: ta.macd(x, fast=12, slow=26, signal=9)).values.T.tolist()
-    bbands = df.groupby('tic')['Close'].apply(lambda x: ta.bbands(x, length=20, std=2))
-    df['BBL'], df['BBM'], df['BBU'] = bbands[['BBL_20_2.0', 'BBM_20_2.0', 'BBU_20_2.0']].values.T
-    df['ATR_14'] = df.groupby('tic').apply(lambda x: ta.atr(x['High'], x['Low'], x['Close'], length=14)).reset_index(level=0, drop=True)
-    df['Stochastic_K'], df['Stochastic_D'] = df.groupby('tic').apply(lambda x: ta.stoch(x['High'], x['Low'], x['Close'], fast_k=14, slow_d=3)).values.T
-    df['CCI_14'] = df.groupby('tic').apply(lambda x: ta.cci(x['High'], x['Low'], x['Close'], length=14)).reset_index(level=0, drop=True).tolist()
-    df['ADX_14'] = df.groupby('tic').apply(lambda x: ta.adx(x['High'], x['Low'], x['Close'], length=14)).reset_index(level=0, drop=True)[['ADX_14']]
-    df['OBV'] = df.groupby('tic').apply(lambda x: ta.obv(x['Close'], x['Volume'])).reset_index(level=0, drop=True).tolist()
-    df['WILLR_14'] = df.groupby('tic').apply(lambda x: ta.willr(x['High'], x['Low'], x['Close'], length=14)).reset_index(level=0, drop=True)
-    df['ROC_10'] = df.groupby('tic')['Close'].transform(lambda x: ta.roc(x, length=10))
-    df['Vortex_Pos'], df['Vortex_Neg'] = df.groupby('tic').apply(lambda x: ta.vortex(x['High'], x['Low'], x['Close'], length=14)).values.T
-    df['ATR_14'] = df.groupby('tic').apply(lambda x: ta.atr(x['High'], x['Low'], x['Close'], length=14)).reset_index(level=0, drop=True)
+    indicator_cols = [
+        'SMA_10', 'SMA_50', 'SMA_200', 'EMA_10', 'RSI_14',
+        'MACD', 'MACD_signal', 'MACD_hist',
+        'BBL', 'BBM', 'BBU',
+        'ATR_14', 'Stochastic_K', 'Stochastic_D',
+        'CCI_14', 'ADX_14', 'OBV', 'WILLR_14', 'ROC_10',
+        'Vortex_Pos', 'Vortex_Neg',
+    ]
+    for col in indicator_cols:
+        df[col] = np.nan
 
+    for _, idx in df.groupby('tic').groups.items():
+        g = df.loc[idx].sort_values('Date')
+
+        close = g['Close'].astype(float)
+        high = g['High'].astype(float)
+        low = g['Low'].astype(float)
+        volume = g['Volume'].astype(float)
+
+        df.loc[g.index, 'SMA_10'] = talib.SMA(close.values, timeperiod=10)
+        df.loc[g.index, 'SMA_50'] = talib.SMA(close.values, timeperiod=50)
+        df.loc[g.index, 'SMA_200'] = talib.SMA(close.values, timeperiod=200)
+        df.loc[g.index, 'EMA_10'] = talib.EMA(close.values, timeperiod=10)
+        df.loc[g.index, 'RSI_14'] = talib.RSI(close.values, timeperiod=14)
+
+        macd, macd_signal, macd_hist = talib.MACD(close.values, fastperiod=12, slowperiod=26, signalperiod=9)
+        df.loc[g.index, 'MACD'] = macd
+        df.loc[g.index, 'MACD_signal'] = macd_signal
+        df.loc[g.index, 'MACD_hist'] = macd_hist
+
+        bbu, bbm, bbl = talib.BBANDS(
+            close.values,
+            timeperiod=20,
+            nbdevup=2,
+            nbdevdn=2,
+            matype=0,
+        )
+        df.loc[g.index, 'BBL'] = bbl
+        df.loc[g.index, 'BBM'] = bbm
+        df.loc[g.index, 'BBU'] = bbu
+
+        df.loc[g.index, 'ATR_14'] = talib.ATR(high.values, low.values, close.values, timeperiod=14)
+
+        stoch_k, stoch_d = talib.STOCH(
+            high.values,
+            low.values,
+            close.values,
+            fastk_period=14,
+            slowk_period=3,
+            slowk_matype=0,
+            slowd_period=3,
+            slowd_matype=0,
+        )
+        df.loc[g.index, 'Stochastic_K'] = stoch_k
+        df.loc[g.index, 'Stochastic_D'] = stoch_d
+
+        df.loc[g.index, 'CCI_14'] = talib.CCI(high.values, low.values, close.values, timeperiod=14)
+        df.loc[g.index, 'ADX_14'] = talib.ADX(high.values, low.values, close.values, timeperiod=14)
+        df.loc[g.index, 'OBV'] = talib.OBV(close.values, volume.values)
+        df.loc[g.index, 'WILLR_14'] = talib.WILLR(high.values, low.values, close.values, timeperiod=14)
+        df.loc[g.index, 'ROC_10'] = talib.ROC(close.values, timeperiod=10)
+
+        vi_pos, vi_neg = _calculate_vortex(high, low, close, length=14)
+        df.loc[g.index, 'Vortex_Pos'] = vi_pos.values
+        df.loc[g.index, 'Vortex_Neg'] = vi_neg.values
+
+    df = df.set_index('tic')
     return df
 
 def add_covariance_matrix(df, tic_list, window=252):
@@ -199,4 +274,3 @@ def split_collect_stock_data_from_csv(tic_list, csv_file='dji_stock_data.csv', c
     df2 = add_covariance_matrix(df2, group2)
 
     return iteration, group1, group2, df1, df2
-

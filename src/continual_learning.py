@@ -172,8 +172,8 @@ class EWC_PPO(PPO):
 
                 # Add EWC penalty
                 if self.ewc is not None:
-                    ewc_penalty = self.ewc.penalty(self.policy)
-                    loss += ewc_penalty
+                    ewc_penalty = self.ewc.penalty(self.policy).squeeze()
+                    loss = loss + ewc_penalty
 
                 # Calculate approximate form of reverse KL Divergence for early stopping
                 # see issue #417: https://github.com/DLR-RM/stable-baselines3/issues/417
@@ -280,8 +280,8 @@ class EWC_A2C(A2C):
 
             # Add EWC penalty
             if self.ewc is not None:
-                ewc_penalty = self.ewc.penalty(self.policy)
-                loss += ewc_penalty
+                ewc_penalty = self.ewc.penalty(self.policy).squeeze()
+                loss = loss + ewc_penalty
                 ewc_penalties.append(ewc_penalty.item())
 
             # Optimization step
@@ -365,8 +365,8 @@ class EWC_DDPG(DDPG):
                 
                 # Add EWC penalty to actor loss
                 if self.ewc is not None:
-                    ewc_penalty = self.ewc.penalty(self.actor)
-                    actor_loss += ewc_penalty
+                    ewc_penalty = self.ewc.penalty(self.actor).squeeze()
+                    actor_loss = actor_loss + ewc_penalty
                     ewc_penalties.append(ewc_penalty.item())
 
                 actor_losses.append(actor_loss.item())

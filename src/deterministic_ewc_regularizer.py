@@ -63,7 +63,9 @@ class Deterministic_EWC:
         return fisher
 
     def penalty(self, target_actor):
-        penalty_loss = torch.zeros(1, device=next(target_actor.parameters()).device)
+        # Keep this as a scalar tensor to avoid shape/broadcast issues
+        # when adding to scalar actor losses.
+        penalty_loss = torch.zeros((), device=next(target_actor.parameters()).device)
 
         for name, param in target_actor.named_parameters():
             if not param.requires_grad:

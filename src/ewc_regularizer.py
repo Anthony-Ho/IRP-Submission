@@ -55,7 +55,9 @@ class EWC:
         return fisher
 
     def penalty(self, target_policy):
-        penalty_loss = torch.zeros(1, device=self.device)
+        # Keep this as a scalar tensor to avoid shape/broadcast issues
+        # when adding to scalar policy losses.
+        penalty_loss = torch.zeros((), device=self.device)
 
         for name, param in target_policy.named_parameters():
             if not param.requires_grad:

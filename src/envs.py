@@ -15,6 +15,8 @@ class PortfolioAllocationEnv(gym.Env):
         tic_list=None,
         transaction_fee_rate=0.001,
         logfile=None,
+        verbose=False,
+        print_every_n_episodes=5,
         random_start=False,
         random_window_size=False,
         min_window_size=200,
@@ -85,6 +87,8 @@ class PortfolioAllocationEnv(gym.Env):
         self._final_weights_memory = [self.portfolio_weights]
         self._transaction_fees = []
         self.logfile = logfile
+        self.verbose = verbose
+        self.print_every_n_episodes = print_every_n_episodes
 
     def reset(self, seed=None, options=None):
         """
@@ -94,13 +98,16 @@ class PortfolioAllocationEnv(gym.Env):
         if seed is not None:
             np.random.seed(seed)
 
-        if ((self.episode % 5) == 0) and (self.episode > 0):
+        if (
+            self.verbose
+            and self.print_every_n_episodes > 0
+            and (self.episode % self.print_every_n_episodes) == 0
+            and (self.episode > 0)
+        ):
             performance_metric = self._calculate_portfolio_metrics()
             print(performance_metric)
-            logdata = self.log_episode()
-            log_df = pd.DataFrame(logdata)
-            log_df.set_index('Dates', inplace=True)
-            print((log_df.head()))
+            # Keep logging to CSV if enabled, but avoid noisy DataFrame prints.
+            self.log_episode()
 
         total_days = len(self.trading_dates)
         if total_days < 2:

@@ -199,6 +199,7 @@ Follow the steps below to set up and run the experiment on the Viking HPC cluste
 ## Additional Notes
 
 GPU Support: The Docker setup assumes NVIDIA GPU support. Ensure drivers and CUDA are correctly configured.
+Technical Indicators: Indicator generation in `data_processing.py` uses `TA-Lib` (Python package `TA-Lib`). Docker installs dependencies with `--prefer-binary` to use wheels by default.
 Output: Experiment results are saved in the `results/` directory. Performance metrics and returns are logged in CSV files for each iteration.
 
 ## License

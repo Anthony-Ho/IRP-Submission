@@ -5,7 +5,7 @@ import argparse
 import pandas as pd
 
 # Add src/ to the system path
-sys.path.append('/workspace/IRP/src')
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Import local functions
 from experiment_config import tic_list, result_dir, model_dir, PPO_PARAMS, A2C_PARAMS, DDPG_PARAMS
@@ -153,7 +153,7 @@ def experiment_iteration(model_dir, train_df1, train_df2, val_df1, val_df2, test
     else:
         returns_df.to_csv(returns_file, index=False, mode='a', header=False)  # Append without writing header
 
-def run_experiment_with_validation(combination_file='combinartions.csv'):
+def run_experiment_with_validation(combination_file='combinations.csv'):
     """
     This is the main loop to run the experiment once.
     12 models (Baslein, Naive, EWC and Reply on PPO, A2C and DDPF) are trained

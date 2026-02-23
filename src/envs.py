@@ -223,6 +223,7 @@ class PortfolioAllocationEnv(gym.Env):
         """
         # Clip the action to ensure no negative weights
         action = np.clip(action, 1e-8, None)
+        action = np.nan_to_num(action, nan=1e-8, posinf=1e8, neginf=1e-8)
 
         # Ensure sufficient cash balance at step 0 to pay the transaction fee when initial
         # position setup.
